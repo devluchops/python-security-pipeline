@@ -16,6 +16,7 @@ jobs:
   codeql-analysis:
     name: CodeQL Security Analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +51,7 @@ jobs:
   python-security:
     name: Python Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     steps:
     - name: Checkout code
@@ -60,11 +62,19 @@ jobs:
       with:
         python-version: '3.11'
 
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
     - name: Install security tools
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install bandit safety pip-audit pytest pytest-cov flake8
+        pip install pytest pytest-cov flake8
 
     # Run unit tests with coverage
     - name: Run Unit Tests
@@ -78,11 +88,13 @@ jobs:
         flags: unittests
         name: codecov-umbrella
 
-    # Bandit - Python security linter
+    # Bandit - Python security linter with SARIF output
     - name: Run Bandit Security Scan
       run: |
-        bandit -r . -f sarif -o bandit-results.sarif || true
-        bandit -r . -ll
+        echo "Running Bandit security scan..."
+        bandit -r . -f sarif -o bandit-results.sarif
+        echo "Bandit scan completed. Displaying summary:"
+        bandit -r . -ll || true
 
     - name: Upload Bandit SARIF results
       uses: github/codeql-action/upload-sarif@v3
@@ -94,8 +106,10 @@ jobs:
     # Safety - Check Python dependencies for known security vulnerabilities
     - name: Run Safety Check
       run: |
-        safety check --json --output safety-report.json || true
-        safety check || true
+        echo "Running Safety dependency vulnerability check..."
+        safety check --json --output safety-report.json || echo "Safety found vulnerabilities (saved to report)"
+        echo "Safety summary:"
+        safety check || echo "⚠️ Vulnerabilities found - check safety-report.json for details"
 
     - name: Upload Safety Results
       uses: actions/upload-artifact@v4
@@ -107,8 +121,10 @@ jobs:
     # pip-audit - PyPA's official vulnerability scanner
     - name: Run pip-audit
       run: |
-        pip-audit --format=json --output=pip-audit-report.json || true
-        pip-audit || true
+        echo "Running pip-audit vulnerability scanner..."
+        pip-audit --format=json --output=pip-audit-report.json || echo "pip-audit found vulnerabilities (saved to report)"
+        echo "pip-audit summary:"
+        pip-audit || echo "⚠️ Vulnerabilities found - check pip-audit-report.json for details"
 
     - name: Upload pip-audit Results
       uses: actions/upload-artifact@v4
@@ -127,6 +143,7 @@ jobs:
   docker-security:
     name: Docker Security Analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     
     steps:
     - name: Checkout code
